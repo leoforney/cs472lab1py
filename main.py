@@ -1,11 +1,27 @@
 import argparse
+import os
 import time
+import threading
+from os import path
 
 class Puzzle:
-    def __init__(self):
+    def __init__(self, name=None):
         self.elements = []
         self.goal_state = ['1', '2', '3', '4', '5', '6', '7', '8', '_']
-        pass
+        self.start_time = None
+        self.paths = {}
+        self.total_visited = []
+        self.visited = []
+        self.time_limit = 15 * 60
+
+        if name is not None:
+            self.read_file(name)
+
+    def clear(self):
+        self.start_time = None
+        self.paths = {}
+        self.total_visited = []
+        self.visited = []
 
     def print_state(self, state):
         if len(state) != 9:
@@ -36,9 +52,6 @@ class Puzzle:
 
         modified_state = curr_state.copy()
         del modified_state[current_index]
-
-        move_index = -1
-        move_char = ''
 
         if transition == "L":
             move_index = current_index + 1
@@ -86,7 +99,7 @@ class Puzzle:
                 if int1 > int2:
                     inversions += 1
 
-        print("Found " + str(inversions) + " inversions")
+        #print("Found " + str(inversions) + " inversions")
         if inversions % 2 == 0:
             return True
         else:
@@ -97,66 +110,66 @@ class Puzzle:
 
         node = self.elements
 
-        visited = []
         queue = []
 
-        paths = {}
-
-        visited.append(node)
+        self.visited.append(node)
         queue.append(node)
         m = None
 
-        while m != self.goal_state:
+        while m != self.goal_state and (time.time() - self.start_time) < self.time_limit:
             m = queue.pop(0)
 
             for trans in self.get_possible_transitions(m):
 
                 next_state = self.get_next_state_given_transition(m, trans)
 
-                if self.stringify_state(m) in paths:
-                    paths[self.stringify_state(next_state)] = paths[self.stringify_state(m)] + trans
+                if self.stringify_state(m) in self.paths:
+                    self.paths[self.stringify_state(next_state)] = self.paths[self.stringify_state(m)] + trans
                 else:
-                    paths[self.stringify_state(next_state)] = trans
+                    self.paths[self.stringify_state(next_state)] = trans
 
                 # We know the parent is m, it took the trans path to get to the state next_state
 
-                if next_state not in visited:
-                    visited.append(next_state)
+                if next_state not in self.visited:
+                    self.visited.append(next_state)
                     queue.append(next_state)
 
-        print("Correct path: " + paths[self.stringify_state(self.goal_state)])
-        print("Nodes generated: " + str(len(visited)))
+        if m == self.goal_state:
+            return self.paths[self.stringify_state(self.goal_state)], len(self.visited)
+        else:
+            return None
 
-    def iddfs(self, max_depth):
+    def iddfs(self):
 
-        total_visited = []
+        max_depth = 1
 
-        for depth_limit in range(max_depth+1):
-            stack = [(puz.elements, 0)]
-            visited = []
-            paths = {}
+        while (time.time() - self.start_time) < self.time_limit:
 
-            while stack:
+            stack = [(self.elements, 0)]
+            self.visited = []
+
+            while stack and (time.time() - self.start_time) < self.time_limit:
                 node, depth = stack.pop()
-                if node == puz.goal_state:
-                    print("Correct path: " + paths[self.stringify_state(self.goal_state)])
-                    print("Nodes generated: " + str(len(total_visited)))
-                    return "Solution found!"
-                if depth < depth_limit:
-                    visited.append(node)
-                    total_visited.append(node)
+                if node == self.goal_state:
+                    return self.paths[self.stringify_state(self.goal_state)], len(self.total_visited)
+                if depth < max_depth:
+                    self.visited.append(node)
+                    self.total_visited.append(node)
                     children = self.get_possible_transitions(node)
                     for transition in children:
 
                         next_state = self.get_next_state_given_transition(node, transition)
 
-                        if self.stringify_state(node) in paths:
-                            paths[self.stringify_state(next_state)] = paths[self.stringify_state(node)] + transition
+                        if self.stringify_state(node) in self.paths:
+                            self.paths[self.stringify_state(next_state)] = self.paths[self.stringify_state(node)] + transition
                         else:
-                            paths[self.stringify_state(next_state)] = transition
+                            self.paths[self.stringify_state(next_state)] = transition
 
-                        if next_state not in visited:
+                        if next_state not in self.visited:
                             stack.append((next_state, depth+1))
+
+            max_depth += 1
+            self.paths = {}
 
         # If the goal state is not found, return failure
         return None
@@ -171,54 +184,46 @@ class Puzzle:
         return misplaced_tiles
 
     def a_star(self, heuristic):
-        initial_state = puz.elements
-        paths = {}
-        # Create an open list to store the nodes to be expanded
+        initial_state = self.elements
+
         queue = []
-        # Create a closed list to store the visited nodes
+
         visited = set()
-        # Add the initial state to the open list
+
         queue.append((initial_state, 0, 0))
-        # While the open list is not empty, continue searching
-        while queue:
-            # Sort the open list by the sum of the current depth and the heuristic
+
+        while queue and (time.time() - self.start_time) < self.time_limit:
+
             queue.sort(key=lambda x: x[1]+x[2])
-            # Pop the first node from the open list
             node, depth, misplaced_tiles = queue.pop(0)
 
-            # If the current node is the goal state, return the solution path
             if node == self.goal_state:
-                print("Correct path: " + paths[self.stringify_state(self.goal_state)])
-                print("Nodes generated: " + str(len(visited)))
-                return "Solution found!"
+                return self.paths[self.stringify_state(self.goal_state)], len(visited)
 
-            # Add the current node to the closed list
             visited.add(self.stringify_state(node))
-            # Get the child nodes of the current node
+
             possible_transitions = self.get_possible_transitions(node)
 
-            # Add the child nodes to the open list if they have not been visited before
             for transition in possible_transitions:
 
                 next_state = self.get_next_state_given_transition(node, transition)
 
                 if self.stringify_state(next_state) not in visited:
 
-                    if self.stringify_state(node) in paths:
-                        paths[self.stringify_state(next_state)] = paths[self.stringify_state(node)] + transition
+                    if self.stringify_state(node) in self.paths:
+                        self.paths[self.stringify_state(next_state)] = self.paths[self.stringify_state(node)] + transition
                     else:
-                        paths[self.stringify_state(next_state)] = transition
+                        self.paths[self.stringify_state(next_state)] = transition
 
-                    # Calculate the depth and misplaced tiles heuristic of the child node
+
                     child_depth = depth + 1
                     heuristic_val = 0
                     if heuristic == "misplaced":
-                        heuristic_val = self.get_misplaced_tiles(next_state, self.goal_state)
+                        heuristic_val = self.get_misplaced_tiles(next_state)
                     elif heuristic == "manhattan":
                         heuristic_val = self.calculate_manhattan_heuristic(next_state)
-                    # Add the child node to the open list
+
                     queue.append((next_state, child_depth, heuristic_val))
-        # If the goal state is not found, return failure
         return None
 
     def calculate_manhattan_heuristic(self, state):
@@ -237,13 +242,62 @@ class Puzzle:
         index = state.index(char)
         return index % 3, round(index / 3)
 
+    def read_file(self, name):
+        with open(name, "r") as f:
+            for l in f:
+                elements = l.split(" ")
+                for element in elements:
+                    self.elements.append(element.strip())
 
-def read_file(name, puz):
-    with open(name, "r") as f:
-        for l in f:
-            elements = l.split(" ")
-            for element in elements:
-                puz.elements.append(element.strip())
+solution_dict = {}
+
+def solve_puzzle(fname):
+    puz = Puzzle(fname)
+
+    isSolvable = puz.solvable(puz.elements)
+
+    algs = []
+    if args.alg != "all":
+        algs.append(args.alg)
+    else:
+        algs = ["bfs", "ids", "h1", "h2"]
+
+    if isSolvable:
+        for alg in algs:
+            puz.start_time = time.time()
+
+            result = None
+
+            if alg == "bfs":
+                result = puz.bfs()
+            elif alg == "ids":
+                result = puz.iddfs()
+            elif alg == "h1":
+                result = puz.a_star("misplaced")
+            elif alg == "h2":
+                result = puz.a_star("manhattan")
+
+            total_time = time.time() - puz.start_time
+            if result is None:
+                solution_dict[fname + "-" + alg] = {
+                    "path": None,
+                    "nodes_generated": None,
+                    "time": total_time
+                }
+            else:
+                solution_dict[fname + "-" + alg] = {
+                    "path": result[0],
+                    "nodes_generated": result[1],
+                    "time": total_time
+                }
+            puz.clear()
+    else:
+        solution_dict[fname + "-" + args.alg] = {
+            "path": "Unsolvable",
+            "nodes_generated": None,
+            "time": None
+        }
+
 
 
 
@@ -257,34 +311,44 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    puz = Puzzle()
+    files = []
 
-    read_file(args.fPath, puz)
+    threads = []
 
-    x, y = puz.get_char_location_in_state('5', puz.elements)
-    print("X: " + str(x) + " Y: " + str(y))
-
-    isSolvable = puz.solvable(puz.elements)
-
-    if isSolvable:
-        solveStart = time.time()
-
-        if args.alg == "bfs":
-            puz.bfs()
-        elif args.alg == "IDS":
-            result = None
-
-            puz.iddfs(1000)
-        elif args.alg == "h1":
-            result = puz.a_star("misplaced")
-            print(result)
-        elif args.alg == "h2":
-            result = puz.a_star("manhattan")
-
-        solveEnd = time.time() - solveStart
-        print("BFS Time: " + str(solveEnd))
+    if path.isdir(args.fPath):
+        for f in os.listdir(args.fPath):
+            files.append(os.path.join(args.fPath, f))
     else:
-        print("Puzzle isn't solvable")
+        files.append(args.fPath)
+
+    for puzzle_file in files:
+        print("Solving puzzle: " + puzzle_file)
+        puz_thread = threading.Thread(target=solve_puzzle, args=(puzzle_file, ))
+        threads.append(puz_thread)
+
+    for thr in threads:
+        thr.start()
+
+    for thr in threads:
+        thr.join()
+
+    print("Threads done")
+
+    for key in solution_dict:
+        solution = solution_dict[key]
+        print("/---------------/")
+        print("Puzzle: " + key)
+
+        if solution["path"] is not None:
+            print("Correct path: " + solution["path"])
+        else:
+            print("Puzzle ran out of time")
+
+        if solution["nodes_generated"] is not None:
+            print("Nodes generated: " + str(solution["nodes_generated"]))
+
+        if solution["time"] is not None:
+            print("Time: %.8f seconds" % solution["time"])
 
 
 
